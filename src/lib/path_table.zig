@@ -46,3 +46,38 @@ pub fn get(self: *Self, id: u32) ?[]const u8 {
     }
     return null;
 }
+
+pub fn serialize(self: *Self) !void {
+    if (self.modified) {
+        const dir = try kf.getPath(self.arena.allocator(), .local_configuration);
+        if (dir) |config_dir| {
+            const conc_name = try std.fs.path.join(self.arena.allocator(), &[_][]const u8{ config_dir, "wallchanger/libraries/path_table.json" });
+
+            const size = std.mem.replacementSize(u8, conc_name, "/", std.fs.path.sep_str);
+            const config_file_name = try self.arena.allocator().alloc(u8, size);
+            _ = std.mem.replace(u8, conc_name, "/", std.fs.path.sep_str, config_file_name);
+
+            try std.fs.cwd().makePath(std.fs.path.dirname(config_file_name).?);
+
+            var config_check: bool = false;
+            var config_file: std.fs.File = undefined;
+
+            std.fs.accessAbsolute(config_file_name, .{}) catch |err| {
+                config_check = if (err == error.FilenotFound) false else true;
+            };
+
+            if (config_check) {
+                config_file = try std.fs.createFileAbsolute(config_file_name, .{
+                    .exclusive = true,
+                });
+            } else {
+                config_file = try std.fs.openFileAbsolute(config_file_name, .{
+                    .mode = .write_only,
+                });
+            }
+            defer config_file.close();
+
+            try std.json.stringify(self.path_store.items, .{ .whitespace = .indent_tab }, config_file.writer());
+        }
+    }
+}
