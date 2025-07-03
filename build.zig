@@ -9,6 +9,10 @@ pub fn build(b: *std.Build) void {
 
     const wall_mod = b.addModule("changer", .{ .root_source_file = b.path("src/lib/root.zig") });
 
+    const known_folders = b.dependency("known_folders", .{}).module("known-folders");
+
+    wall_mod.addImport("known-folders", known_folders);
+
     const exe_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
