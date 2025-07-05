@@ -81,3 +81,30 @@ pub fn serialize(self: *Self) !void {
         }
     }
 }
+
+pub fn deserialize(self: *Self) !bool {
+    const dir = try kf.getPath(self.arena.allocator(), .local_configuration);
+    if (dir) |config_dir| {
+        const conc_name = try std.fs.path.join(self.arena.allocator(), &[_][]const u8{ config_dir, "wallchanger/libraries/path_table.json" });
+
+        const size = std.mem.replacementSize(u8, conc_name, "/", std.fs.path.sep_str);
+        const config_file_name = try self.arena.allocator().alloc(u8, size);
+        _ = std.mem.replace(u8, conc_name, "/", std.fs.path.sep_str, config_file_name);
+
+        var table_exists: bool = true;
+
+        std.fs.accessAbsolute(config_file_name, .{}) catch |err| {
+            table_exists = if (err == error.FilenotFound) false else true;
+        };
+
+        if (table_exists) {
+            const config_buf = try std.fs.cwd().readFileAlloc(self.arena.allocator(), config_file_name, 4096);
+            const parsed = try std.json.parseFromSlice(@TypeOf(self.path_store.items), self.arena.allocator(), config_buf, .{});
+            defer parsed.deinit();
+            self.path_store.items = parsed.value;
+            return true;
+        }
+        return false;
+    }
+    return false;
+}
