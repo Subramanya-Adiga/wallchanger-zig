@@ -59,20 +59,20 @@ pub fn serialize(self: *Self) !void {
 
             try std.fs.cwd().makePath(std.fs.path.dirname(config_file_name).?);
 
-            var config_check: bool = false;
+            var config_check: bool = true;
             var config_file: std.fs.File = undefined;
 
-            std.fs.accessAbsolute(config_file_name, .{}) catch |err| {
-                config_check = if (err == error.FilenotFound) false else true;
+            std.fs.cwd().access(config_file_name, .{}) catch |err| {
+                config_check = if (err == error.FileNotFound) false else true;
             };
 
             if (config_check) {
-                config_file = try std.fs.createFileAbsolute(config_file_name, .{
-                    .exclusive = true,
-                });
-            } else {
                 config_file = try std.fs.openFileAbsolute(config_file_name, .{
                     .mode = .write_only,
+                });
+            } else {
+                config_file = try std.fs.createFileAbsolute(config_file_name, .{
+                    .exclusive = true,
                 });
             }
             defer config_file.close();
