@@ -92,3 +92,4 @@ Extracted/*
 *.nes
 *.log
 log/*
+*.json
