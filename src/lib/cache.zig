@@ -73,21 +73,32 @@ pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.jso
         return error.UnexpectedToken;
     }
 
-    var ret: Self = .{ .store = .{} };
-    _ = try source.next();
+    var buf = std.mem.zeroes([2048]u8);
+    var fba = std.heap.FixedBufferAllocator.init(&buf);
 
-    const size = try std.json.innerParse(usize, allocator, source, options);
+    var ret: Self = .{ .store = .{} };
+
+    const size_field = try std.json.innerParse([]const u8, fba.allocator(), source, options);
+    if (std.mem.eql(u8, size_field, "size") == false) {
+        return error.UnknownField;
+    }
+
+    const size = try std.json.innerParse(usize, fba.allocator(), source, options);
     try ret.store.ensureTotalCapacity(allocator, size);
 
-    _ = try source.next();
+    const value_field = try std.json.innerParse([]const u8, fba.allocator(), source, options);
+    if (std.mem.eql(u8, value_field, "store") == false) {
+        return error.UnknownField;
+    }
 
     switch (try source.peekNextTokenType()) {
         .array_begin => {
-            _ = try source.next();
+            std.debug.assert(.array_begin == try source.next());
             for (0..size) |pos| {
-                try ret.store.insert(allocator, pos, try std.json.innerParse(CacheType, allocator, source, options));
+                fba.reset();
+                try ret.store.insert(allocator, pos, try std.json.innerParse(CacheType, fba.allocator(), source, options));
             }
-            _ = try source.next();
+            std.debug.assert(.array_end == try source.next());
         },
         else => {},
     }
