@@ -12,24 +12,28 @@ pub const StoreType = struct {
 
 const CacheType = enum { Directory, Individual };
 
-arena: std.heap.ArenaAllocator = undefined,
+allocator: std.mem.Allocator = .{},
 store: std.MultiArrayList(StoreType) = .{},
 
 pub fn init(allocator: std.mem.Allocator) Self {
-    return .{ .arena = std.heap.ArenaAllocator.init(allocator) };
+    return .{ .allocator = allocator };
 }
 
 pub fn deinit(self: *Self) void {
-    self.store.deinit(self.arena.allocator());
+    self.store.deinit(self.allocator);
+}
+
+pub fn insert(self: *Self, name: []const u8, cache: Cache) !void {
+    try self.store.append(self.allocator, .{ .name = name, .cache = cache, .cache_type = .Directory });
 }
 
 pub fn serialize(self: *Self) !void {
     var buf = std.mem.zeroes([256]u8);
-    var fba = std.heap.FixedBufferAllocator(&buf);
+    var fba = std.heap.FixedBufferAllocator.init(&buf);
 
     const dir = try kf.getPath(fba.allocator(), .local_configuration);
     if (dir) |config_dir| {
-        const conc_name = try std.fs.path.join(fba.allocator(), &[_][]const u8{ config_dir, "wallchanger/libraries/cache.json" });
+        const conc_name = try std.fs.path.join(fba.allocator(), &[_][]const u8{ config_dir, "wallchanger/data/cache.json" });
 
         const size = std.mem.replacementSize(u8, conc_name, "/", std.fs.path.sep_str);
         const config_file_name = try fba.allocator().alloc(u8, size);
@@ -54,7 +58,17 @@ pub fn serialize(self: *Self) !void {
             });
         }
         defer cache_file.close();
-        try std.json.stringify(self.store.items, .{}, cache_file.writer());
+
+        var jw = std.json.writeStream(cache_file.writer(), .{});
+        defer jw.deinit();
+        try jw.beginObject();
+        try jw.objectField("store");
+        try jw.beginArray();
+        for (self.store.items(.cache_type), self.store.items(.name), self.store.items(.cache)) |ctype, name, cache| {
+            try jw.write(@as(StoreType, .{ .cache_type = ctype, .name = name, .cache = cache }));
+        }
+        try jw.endArray();
+        try jw.endObject();
     }
 }
 
@@ -64,7 +78,7 @@ pub fn deseraialize(self: *Self) !void {
 
     const dir = try kf.getPath(fba.allocator(), .local_configuration);
     if (dir) |config_dir| {
-        const conc_name = try std.fs.path.join(fba.allocator(), &[_][]const u8{ config_dir, "wallchanger/libraries/cache.json" });
+        const conc_name = try std.fs.path.join(fba.allocator(), &[_][]const u8{ config_dir, "wallchanger/data/cache.json" });
 
         const size = std.mem.replacementSize(u8, conc_name, "/", std.fs.path.sep_str);
         const config_file_name = try fba.allocator().alloc(u8, size);
