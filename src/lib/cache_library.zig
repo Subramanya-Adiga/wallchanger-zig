@@ -12,7 +12,7 @@ pub const StoreType = struct {
 
 const CacheType = enum { Directory, Individual };
 
-allocator: std.mem.Allocator = .{},
+allocator: std.mem.Allocator = undefined,
 store: std.MultiArrayList(StoreType) = .{},
 
 pub fn init(allocator: std.mem.Allocator) Self {
@@ -62,6 +62,8 @@ pub fn serialize(self: *Self) !void {
         var jw = std.json.writeStream(cache_file.writer(), .{});
         defer jw.deinit();
         try jw.beginObject();
+        try jw.objectField("size");
+        try jw.write(self.store.len);
         try jw.objectField("store");
         try jw.beginArray();
         for (self.store.items(.cache_type), self.store.items(.name), self.store.items(.cache)) |ctype, name, cache| {
@@ -91,10 +93,44 @@ pub fn deseraialize(self: *Self) !void {
         };
 
         if (cache_exists) {
-            const config_buf = try std.fs.cwd().readFileAlloc(fba.allocator(), config_file_name, 3072 * 1024);
-            const parsed = try std.json.parseFromSlice(@TypeOf(self.path_store.items), self.allocator, config_buf, .{});
-            defer parsed.deinit();
-            self.path_store.items = parsed.value;
+            const config_buf = try std.fs.cwd().readFileAlloc(fba.allocator(), config_file_name, 2048 * 1024);
+            //Construct JSON Object Scanner
+            var parse_arena = std.heap.ArenaAllocator.init(fba.allocator());
+            defer parse_arena.deinit();
+            const parse_allocator = parse_arena.allocator();
+
+            var source = std.json.Scanner.initCompleteInput(parse_allocator, config_buf);
+            defer source.deinit();
+            const options: std.json.ParseOptions = .{ .allocate = .alloc_if_needed, .max_value_len = source.input.len };
+
+            std.debug.assert(.object_begin == try source.next());
+
+            const size_field = try std.json.innerParse([]const u8, parse_allocator, &source, options);
+            if (std.mem.eql(u8, "size", size_field) == false) {
+                return error.UnexpectedField;
+            }
+
+            const content_size = try std.json.innerParse(usize, parse_allocator, &source, options);
+
+            const store_field = try std.json.innerParse([]const u8, parse_allocator, &source, options);
+            if (std.mem.eql(u8, "store", store_field) == false) {
+                return error.UnexpectedField;
+            }
+
+            switch (try source.peekNextTokenType()) {
+                .array_begin => {
+                    std.debug.assert(.array_begin == try source.next());
+                    for (0..content_size) |pos| {
+                        try self.store.insert(self.allocator, pos, try std.json.innerParse(StoreType, parse_allocator, &source, options));
+                    }
+                    std.debug.assert(.array_end == try source.next());
+                },
+                else => return error.UnexpectedToken,
+            }
+
+            std.debug.assert(.object_end == try source.next());
+
+            std.debug.assert(.end_of_document == try source.next());
         }
     }
 }
