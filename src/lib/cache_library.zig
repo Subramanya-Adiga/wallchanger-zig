@@ -10,21 +10,56 @@ pub const StoreType = struct {
     cache: Cache,
 };
 
-const CacheType = enum { Directory, Individual };
+pub const CacheType = enum(u8) { Directory, Individual, Mixed };
 
-allocator: std.mem.Allocator = undefined,
+pub const ContainsReturnType = struct {
+    exists: bool,
+    pos: usize,
+};
+
+cache_arena: std.heap.ArenaAllocator = undefined,
 store: std.MultiArrayList(StoreType) = .{},
+current: ?*StoreType = undefined,
 
 pub fn init(allocator: std.mem.Allocator) Self {
-    return .{ .allocator = allocator };
+    return .{ .cache_arena = std.heap.ArenaAllocator.init(allocator) };
 }
 
 pub fn deinit(self: *Self) void {
-    self.store.deinit(self.allocator);
+    self.store.deinit(self.cache_arena.allocator());
+    self.cache_arena.deinit();
 }
 
 pub fn insert(self: *Self, name: []const u8, cache: Cache) !void {
-    try self.store.append(self.allocator, .{ .name = name, .cache = cache, .cache_type = .Directory });
+    if (self.contains(name).exists == false) {
+        try self.store.append(self.cache_arena.allocator(), .{ .name = name, .cache = cache, .cache_type = .Directory });
+    }
+}
+
+pub fn contains(self: *Self, name: []const u8) ContainsReturnType {
+    for (self.store.items(.name), 0..self.store.len) |elem, i| {
+        if (std.mem.eql(u8, elem, name)) {
+            return .{ .exists = true, .pos = i };
+        }
+    }
+    return .{ .exists = false, .pos = 0 };
+}
+
+pub fn getCache(self: *Self, name: []const u8) ?*Cache {
+    const pred = self.contains(name);
+    if (pred.exists) {
+        return &self.store.items(.cache)[pred.pos];
+    }
+    return null;
+}
+
+pub fn putCache(self: *Self, name: []const u8, cache: Cache) !void {
+    const pred = self.contains(name);
+    if (pred.exists) {
+        self.store.orderedRemove(pred.pos);
+        try self.store.append(self.cache_arena.allocator(), cache);
+    }
+    return error.CacheDoesNotExists;
 }
 
 pub fn serialize(self: *Self) !void {
@@ -122,7 +157,7 @@ pub fn deseraialize(self: *Self) !void {
                 .array_begin => {
                     std.debug.assert(.array_begin == try source.next());
                     for (0..content_size) |pos| {
-                        try self.store.insert(self.allocator, pos, try std.json.innerParse(StoreType, parse_allocator, &source, options));
+                        try self.store.insert(self.cache_arena.allocator(), pos, try std.json.innerParse(StoreType, parse_allocator, &source, options));
                         fba.reset();
                     }
                     std.debug.assert(.array_end == try source.next());
