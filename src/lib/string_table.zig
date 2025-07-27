@@ -80,7 +80,7 @@ pub fn serialize(self: *Self) !void {
 }
 
 pub fn deserialize(self: *Self, allocator: std.mem.Allocator) !bool {
-    var buf = std.mem.zeroes([4096 * 1024]u8);
+    var buf = std.mem.zeroes([2048 * 1024]u8);
     var fba = std.heap.FixedBufferAllocator.init(&buf);
 
     const dir = try kf.getPath(fba.allocator(), .local_configuration);
@@ -98,7 +98,8 @@ pub fn deserialize(self: *Self, allocator: std.mem.Allocator) !bool {
         };
 
         if (table_exists) {
-            const config_buf = try std.fs.cwd().readFileAlloc(fba.allocator(), config_file_name, 3072 * 1024);
+            fba.reset();
+            const config_buf = try std.fs.cwd().readFileAlloc(fba.allocator(), config_file_name, 2048 * 1024);
 
             var parse_arena = std.heap.ArenaAllocator.init(fba.allocator());
             defer parse_arena.deinit();
@@ -128,6 +129,7 @@ pub fn deserialize(self: *Self, allocator: std.mem.Allocator) !bool {
                     std.debug.assert(.array_begin == try source.next());
                     for (0..content_size) |idx| {
                         try self.table_store.insert(allocator, idx, try std.json.innerParse(TableType, parse_allocator, &source, opts));
+                        fba.reset();
                     }
                     std.debug.assert(.array_end == try source.next());
                 },

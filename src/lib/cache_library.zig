@@ -75,7 +75,7 @@ pub fn serialize(self: *Self) !void {
 }
 
 pub fn deseraialize(self: *Self) !void {
-    var buf = std.mem.zeroes([4096 * 1024]u8);
+    var buf = std.mem.zeroes([2048 * 1024]u8);
     var fba = std.heap.FixedBufferAllocator.init(&buf);
 
     const dir = try kf.getPath(fba.allocator(), .local_configuration);
@@ -93,6 +93,7 @@ pub fn deseraialize(self: *Self) !void {
         };
 
         if (cache_exists) {
+            fba.reset();
             const config_buf = try std.fs.cwd().readFileAlloc(fba.allocator(), config_file_name, 2048 * 1024);
             //Construct JSON Object Scanner
             var parse_arena = std.heap.ArenaAllocator.init(fba.allocator());
@@ -122,6 +123,7 @@ pub fn deseraialize(self: *Self) !void {
                     std.debug.assert(.array_begin == try source.next());
                     for (0..content_size) |pos| {
                         try self.store.insert(self.allocator, pos, try std.json.innerParse(StoreType, parse_allocator, &source, options));
+                        fba.reset();
                     }
                     std.debug.assert(.array_end == try source.next());
                 },
