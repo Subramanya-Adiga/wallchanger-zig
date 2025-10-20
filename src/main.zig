@@ -1,8 +1,5 @@
-//! you are building an executable. If you are making a library, the convention
-//! is to delete this file and start with root.zig instead.
-const patht = @import("changer").PathTable;
-const cache = @import("changer").Cache;
-const clib = @import("changer").CacheLibrary;
+const std = @import("std");
+const patht = @import("changer").StrTable;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -11,91 +8,44 @@ pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(gpa.allocator());
     defer arena.deinit();
 
-    var path = patht.init(arena.allocator());
-    defer path.deinit();
-    _ = try path.insert("C:/Users/subbu/Documents/wall");
-    _ = try path.insert("C:/Users/subbu/Documents");
-    try path.serialize();
-    // _ = try path.deserialize();
-    // std.debug.print("{any}\n", .{path.path_store.items});
-    for (path.path_store.items) |elem| {
-        std.debug.print("{} {s}\n", .{ elem.id, elem.path });
+    var path: patht = .{};
+    defer path.deinit(arena.allocator());
+
+    var dir = try std.fs.cwd().openDir("C:/Users/subbu/Documents/wall/", .{ .iterate = true });
+    defer dir.close();
+
+    var walk = try dir.walk(arena.allocator());
+    defer walk.deinit();
+
+    while (try walk.next()) |elem| {
+        _ = try path.insert(arena.allocator(), try std.fmt.allocPrint(arena.allocator(), "{s}", .{elem.path}));
     }
+    try path.serialize();
 
-    var cache_1: cache = .{};
-    defer cache_1.deinit(arena.allocator());
+    for (path.table_store.items(.id), path.table_store.items(.str)) |i, s| {
+        std.debug.print("{} {s}\n", .{ i, s });
+    }
+}
 
-    _ = try cache_1.insert(arena.allocator(), 0);
-    _ = try cache_1.insert(arena.allocator(), 1);
-    _ = try cache_1.insert(arena.allocator(), 3);
-    _ = try cache_1.insert(arena.allocator(), 4);
-
-    var file = try std.fs.cwd().createFile("test.json", .{});
-    defer file.close();
-
-    try std.json.stringify(cache_1, .{}, file.writer());
-
+test "CacheValueSetting" {
     const path_id = "D:/wallpaper";
     const name_id = "499p.jpg";
 
-    const path_crc = std.hash.Crc32.hash(path_id);
-    const name_crc = std.hash.Crc32.hash(name_id);
+    const crc_path = std.hash.crc.Crc30Cdma.hash(path_id);
+    const crc_name = std.hash.Crc32.hash(name_id);
 
-    var combined_hash: u64 = path_crc;
-    combined_hash <<= 32;
-    combined_hash |= name_crc;
+    var combined: u64 = 0;
+    combined |= crc_path;
+    combined <<= 32;
+    combined |= crc_name;
+    combined <<= 2;
+    combined |= 3;
 
-    const path_pull = (combined_hash >> 32);
-    const name_pull = (combined_hash & 0xFFFFFFFF);
-    // const unset = path_pull & @as(u32, (~@as(u32, (1 << 1))));
-    std.debug.print("{} {} {} {b} {} {b}\n", .{ path_crc, name_crc, combined_hash, path_pull, name_pull, @as(u2, @truncate(path_pull)) });
+    std.debug.print("path_crc:{}\nname_crc:{}\ncrc_combined:{}\n", .{ crc_path, crc_name, combined });
+    std.debug.print("path_crc_bin:{b}\nname_crc_bin:{b}\ncrc_combined:{b}\n", .{ crc_path, crc_name, combined });
 
-    const buf = try std.fs.cwd().readFileAlloc(gpa.allocator(), "test.json", 4096);
-    defer gpa.allocator().free(buf);
-    const cache_2 = try std.json.parseFromSlice(cache, gpa.allocator(), buf, .{});
-    defer cache_2.deinit();
-
-    for (cache_2.value.store.items(.value)) |elem| {
-        std.debug.print("value:{}\n", .{elem});
-    }
-    std.debug.print("{} {}\n", .{ @sizeOf(cache), @alignOf(cache) });
-    var crc30: u32 = 0;
-    crc30 = std.hash.crc.Crc30Cdma.hash(path_id);
-    crc30 <<= 2;
-    std.debug.print("{} {}\n {b}\n {b}\n {}\n {b}\n {}\n {b}\n {b}\n", .{ crc30, (crc30 >> 2), crc30, std.hash.crc.Crc30Cdma.hash(path_id), crc30 | (@as(u2, 0)), crc30 | (@as(u2, 0)), @as(u2, @truncate(crc30 | (@as(u2, 0)))), @as(u2, @truncate(crc30 | (@as(u2, 0)))), (crc30 + 0) & 0x01 });
-
-    var stat: u2 = 0;
-    stat |= ~@as(u2, (0 << 1));
-    stat |= ~@as(u2, (1 << 1));
-
-    var stat2: u2 = 0;
-    stat2 |= @as(u2, (1 << 1));
-    std.debug.print("state:{b} {} {b} {b}\n stat2:{b} {} {b} {b}\n", .{ stat, stat, stat & 0x1, stat & 0x2, stat2, stat2, stat2 & 0x1, stat2 & 0x2 });
+    const path_pull = (combined >> 34);
+    const name_pull = ((combined >> 2) & 0xFFFFFFFF);
+    const state_pull: u2 = @truncate(combined);
+    std.debug.print("path_crc:{}\nname_crc:{}\nstate:{}\n", .{ path_pull, name_pull, state_pull });
 }
-
-test "simple test" {
-    var list = std.ArrayList(i32).init(std.testing.allocator);
-    defer list.deinit(); // Try commenting this out and see if zig detects the memory leak!
-    try list.append(42);
-    try std.testing.expectEqual(@as(i32, 42), list.pop());
-}
-
-test "use other module" {
-    try std.testing.expectEqual(@as(i32, 150), lib.add(100, 50));
-}
-
-test "fuzz example" {
-    const Context = struct {
-        fn testOne(context: @This(), input: []const u8) anyerror!void {
-            _ = context;
-            // Try passing `--fuzz` to `zig build test` and see if it manages to fail this test case!
-            try std.testing.expect(!std.mem.eql(u8, "canyoufindme", input));
-        }
-    };
-    try std.testing.fuzz(Context{}, Context.testOne, .{});
-}
-
-const std = @import("std");
-
-/// This imports the separate module containing `root.zig`. Take a look in `build.zig` for details.
-const lib = @import("wallchanger_lib");
