@@ -65,9 +65,7 @@ pub fn jsonStringify(self: *const Self, jw: anytype) !void {
     try jw.objectField("size");
     try jw.write(self.store.items.len);
     try jw.objectField("store");
-    // try jw.beginArray();
     try jw.write(self.store.items);
-    // try jw.endArray();
     try jw.endObject();
 }
 
@@ -94,17 +92,7 @@ pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.jso
         return error.UnknownField;
     }
 
-    switch (try source.peekNextTokenType()) {
-        .array_begin => {
-            std.debug.assert(.array_begin == try source.next());
-            for (0..size) |_| {
-                fba.reset();
-                try ret.store.append(try std.json.innerParse(u64, fba.allocator(), source, options));
-            }
-            std.debug.assert(.array_end == try source.next());
-        },
-        else => {},
-    }
+    try ret.store.appendSlice(try std.json.innerParse([]u64, allocator, source, options));
 
     if (try source.next() != .object_end) {
         return error.UnexpectedToken;
@@ -123,22 +111,25 @@ fn exists(self: *Self, cache_value: u64) bool {
 }
 
 test "Cache Stringify And Parse" {
-    var cache = Self.init(std.testing.allocator);
+    const alloc = std.testing.allocator;
+    var cache = Self.init(alloc);
+    defer cache.deinit();
     _ = try cache.insert(55);
     _ = try cache.insert(66);
     _ = try cache.insert(77);
 
-    var cachestr = std.ArrayList(u8).init(std.testing.allocator);
+    var cachestr = std.ArrayList(u8).init(alloc);
+    defer cachestr.deinit();
 
     try std.json.stringify(cache, .{}, cachestr.writer());
-    std.debug.print("{s}\n", .{cachestr.items});
 
-    var cache2 = Self.init(std.testing.allocator);
+    var cache2 = Self.init(alloc);
+    defer cache2.deinit();
 
-    const parsed = try std.json.parseFromSlice(Self, std.testing.allocator, cachestr.items, .{});
-    cache2 = parsed.value;
+    const parsed = try std.json.parseFromSlice(Self, alloc, cachestr.items, .{});
+    try cache2.store.appendSlice(parsed.value.store.items);
+    parsed.deinit();
 
-    for (cache2.store.items) |val| {
-        std.debug.print("{}\n", .{val});
-    }
+    try std.testing.expectEqual(cache.store.items.len, cache2.store.items.len);
+    try std.testing.expectEqualSlices(u64, cache.store.items, cache2.store.items);
 }
