@@ -28,14 +28,14 @@ pub fn insert(self: *Self, value: u64) !bool {
 }
 
 pub fn getValue(self: *Self, index: usize) !u64 {
-    if (index <= self.store.len) {
+    if (index <= self.store.items.len) {
         return self.store.items[index];
     }
     return error.IndexDoesNotExists;
 }
 
 pub fn setValue(self: *Self, index: usize, value: u64) !bool {
-    if (index <= self.store.len) {
+    if (index <= self.store.items.len) {
         self.store.items[index] = value;
         return bool;
     }
@@ -43,14 +43,14 @@ pub fn setValue(self: *Self, index: usize, value: u64) !bool {
 }
 
 pub fn getState(self: *Self, index: usize) !CacheState {
-    if (index <= self.store.len) {
+    if (index <= self.store.items.len) {
         return @enumFromInt(@as(u2, @truncate(self.store.items[index])));
     }
     return error.IndexDoesNotExists;
 }
 
 pub fn setState(self: *Self, index: usize, state: CacheState) !bool {
-    if (index <= self.store.len) {
+    if (index <= self.store.items.len) {
         var val = self.store.items[index];
         val = (val >> 2) << 2;
         val |= @intFromEnum(state);
@@ -132,4 +132,36 @@ test "Cache Stringify And Parse" {
 
     try std.testing.expectEqual(cache.store.items.len, cache2.store.items.len);
     try std.testing.expectEqualSlices(u64, cache.store.items, cache2.store.items);
+}
+
+test "Cache State Set And Get" {
+    const alloc = std.testing.allocator;
+    var cache = Self.init(alloc);
+    defer cache.deinit();
+
+    _ = try cache.insert(10119347595071929548);
+
+    const state_null = cache.getState(0);
+    try std.testing.expectEqual(state_null, CacheState.Null);
+
+    _ = try cache.setState(0, .Used);
+    const cache_val_used = try cache.getValue(0);
+    const state_used = try cache.getState(0);
+
+    try std.testing.expectEqual(cache_val_used, 10119347595071929550);
+    try std.testing.expectEqual(state_used, CacheState.Used);
+
+    _ = try cache.setState(0, .Unused);
+    const cache_val_unused = try cache.getValue(0);
+    const state_unused = try cache.getState(0);
+
+    try std.testing.expectEqual(cache_val_unused, 10119347595071929549);
+    try std.testing.expectEqual(state_unused, CacheState.Unused);
+
+    _ = try cache.setState(0, .Favorate);
+    const cache_val_fav = try cache.getValue(0);
+    const state_fav = try cache.getState(0);
+
+    try std.testing.expectEqual(cache_val_fav, 10119347595071929551);
+    try std.testing.expectEqual(state_fav, CacheState.Favorate);
 }
