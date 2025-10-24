@@ -66,16 +66,8 @@ pub fn serialize(self: *Self) !void {
     var buf = std.mem.zeroes([256]u8);
     var fba = std.heap.FixedBufferAllocator.init(&buf);
 
-    const dir = try kf.getPath(fba.allocator(), .local_configuration);
-    if (dir) |config_dir| {
-        const conc_name = try std.fs.path.join(fba.allocator(), &[_][]const u8{ config_dir, "wallchanger/data/cache.json" });
-
-        const size = std.mem.replacementSize(u8, conc_name, "/", std.fs.path.sep_str);
-        const config_file_name = try fba.allocator().alloc(u8, size);
-        _ = std.mem.replace(u8, conc_name, "/", std.fs.path.sep_str, config_file_name);
-
-        try std.fs.cwd().makePath(std.fs.path.dirname(config_file_name).?);
-
+    const config_file = try configFileName(fba.allocator());
+    if (config_file) |config_file_name| {
         var cache_check: bool = true;
         var cache_file: std.fs.File = undefined;
 
@@ -113,14 +105,8 @@ pub fn deseraialize(self: *Self) !void {
     var buf = std.mem.zeroes([2048 * 1024]u8);
     var fba = std.heap.FixedBufferAllocator.init(&buf);
 
-    const dir = try kf.getPath(fba.allocator(), .local_configuration);
-    if (dir) |config_dir| {
-        const conc_name = try std.fs.path.join(fba.allocator(), &[_][]const u8{ config_dir, "wallchanger/data/cache.json" });
-
-        const size = std.mem.replacementSize(u8, conc_name, "/", std.fs.path.sep_str);
-        const config_file_name = try fba.allocator().alloc(u8, size);
-        _ = std.mem.replace(u8, conc_name, "/", std.fs.path.sep_str, config_file_name);
-
+    const config_file = try configFileName(fba.allocator());
+    if (config_file) |config_file_name| {
         var cache_exists: bool = true;
 
         std.fs.accessAbsolute(config_file_name, .{}) catch |err| {
@@ -170,4 +156,20 @@ pub fn deseraialize(self: *Self) !void {
             std.debug.assert(.end_of_document == try source.next());
         }
     }
+}
+
+fn configFileName(allocator: std.mem.Allocator) !?[]const u8 {
+    const dir = try kf.getPath(allocator, .local_configuration);
+    if (dir) |config_dir| {
+        const conc_name = try std.fs.path.join(allocator, &[_][]const u8{ config_dir, "wallchanger/data/cache.json" });
+
+        const size = std.mem.replacementSize(u8, conc_name, "/", std.fs.path.sep_str);
+        const config_file_name = try allocator.alloc(u8, size);
+        _ = std.mem.replace(u8, conc_name, "/", std.fs.path.sep_str, config_file_name);
+
+        try std.fs.cwd().makePath(std.fs.path.dirname(config_file_name).?);
+        allocator.free(dir.?);
+        return config_file_name;
+    }
+    return null;
 }
