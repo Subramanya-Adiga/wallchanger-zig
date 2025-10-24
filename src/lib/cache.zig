@@ -37,7 +37,7 @@ pub fn getValue(self: *Self, index: usize) !u64 {
 pub fn setValue(self: *Self, index: usize, value: u64) !bool {
     if (index <= self.store.items.len) {
         self.store.items[index] = value;
-        return bool;
+        return true;
     }
     return error.IndexDoesNotExists;
 }
@@ -59,6 +59,22 @@ pub fn setState(self: *Self, index: usize, state: CacheState) !bool {
     }
     return error.IndexDoesNotExists;
 }
+
+// Needs To Be Enabled When Upgraded To Zig Version 0.15.1 Or Higher
+// pub fn removeNull(self: *Self) !void {
+//     var buf = std.mem.zeroes([2048 * 128]u8);
+//     var fba = std.heap.FixedBufferAllocator(&buf);
+//
+//     var indecies = std.ArrayList(usize).init(fba.allocator());
+//     defer indecies.deinit();
+//
+//     for (self.store.items, 0..self.store.items.len) |val, pos| {
+//         if (@as(u2, @truncate(val)) == @intFromEnum(CacheState.Null)) {
+//             try indecies.append(pos);
+//         }
+//     }
+//     self.store.orderedRemoveMany(indecies.items);
+// }
 
 pub fn jsonStringify(self: *const Self, jw: anytype) !void {
     try jw.beginObject();
