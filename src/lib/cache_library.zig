@@ -163,13 +163,10 @@ fn configFileName(allocator: std.mem.Allocator) !?[]const u8 {
     if (dir) |config_dir| {
         const conc_name = try std.fs.path.join(allocator, &[_][]const u8{ config_dir, "wallchanger/data/cache.json" });
 
-        const size = std.mem.replacementSize(u8, conc_name, "/", std.fs.path.sep_str);
-        const config_file_name = try allocator.alloc(u8, size);
-        _ = std.mem.replace(u8, conc_name, "/", std.fs.path.sep_str, config_file_name);
-
-        try std.fs.cwd().makePath(std.fs.path.dirname(config_file_name).?);
+        try std.fs.cwd().makePath(std.fs.path.dirname(conc_name).?);
         allocator.free(dir.?);
-        return config_file_name;
+
+        return conc_name;
     }
     return null;
 }
