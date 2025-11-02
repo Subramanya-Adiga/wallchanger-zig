@@ -177,3 +177,52 @@ test "String Table Insertion" {
         }
     }
 }
+
+test "String Table Serialize And Deserialze" {
+    const builtin = @import("builtin");
+    var testing_arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer testing_arena.deinit();
+    const alloc = testing_arena.allocator();
+
+    const path = switch (builtin.os.tag) {
+        .windows => blk: {
+            const doc_path = try kf.getPath(alloc, .home);
+            const doc_conc = try std.fs.path.join(alloc, &[_][]const u8{ doc_path.?, "\\Documents\\wall" });
+            var dir_check: bool = true;
+            std.fs.cwd().access(doc_conc, .{}) catch |err| {
+                dir_check = if (err == error.FileNotFound) false else true;
+            };
+            break :blk if (dir_check) doc_conc else "D:/Wallpaper";
+        },
+        .linux => blk: {
+            const wall_path = try kf.getPath(alloc, .home);
+            const wall_conc = try std.fs.path.join(alloc, &[_][]const u8{ wall_path.?, "newMass/Wallpaper" });
+            break :blk wall_conc;
+        },
+        else => std.debug.assert(false),
+    };
+
+    var dir = try std.fs.cwd().openDir(path, .{ .iterate = true });
+    defer dir.close();
+    var walk = dir.iterate();
+
+    var str_table: Self = .{};
+    defer str_table.deinit(alloc);
+
+    while (try walk.next()) |elem| {
+        if (elem.kind == .file) {
+            const id = std.hash.Crc32.hash(elem.name);
+            _ = try str_table.insert(alloc, id, elem.name);
+        }
+    }
+
+    try str_table.serialize();
+
+    var str_table2: Self = .{};
+    defer str_table2.deinit(alloc);
+
+    try std.testing.expectEqual(try str_table2.deserialize(alloc), true);
+
+    try std.testing.expectEqualDeep(str_table.table_store.items(.id), str_table2.table_store.items(.id));
+    try std.testing.expectEqualDeep(str_table.table_store.items(.str), str_table2.table_store.items(.str));
+}
