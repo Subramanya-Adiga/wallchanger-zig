@@ -11,10 +11,9 @@ pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
     self.table_store.deinit(allocator);
 }
 
-pub fn insert(self: *Self, allocator: std.mem.Allocator, str: []const u8) !bool {
-    const crc = std.hash.Crc32.hash(str);
-    if (std.mem.containsAtLeast(u32, self.table_store.items(.id), 1, &[_]u32{crc}) == false) {
-        try self.table_store.append(allocator, .{ .id = crc, .str = str });
+pub fn insert(self: *Self, allocator: std.mem.Allocator, id: u32, str: []const u8) !bool {
+    if (std.mem.containsAtLeast(u32, self.table_store.items(.id), 1, &[_]u32{id}) == false) {
+        try self.table_store.append(allocator, .{ .id = id, .str = str });
         return true;
     }
     return false;
@@ -172,6 +171,9 @@ test "String Table Insertion" {
     defer str_table.deinit(alloc);
 
     while (try walk.next()) |elem| {
-        try std.testing.expectEqual(try str_table.insert(alloc, elem.name), true);
+        if (elem.kind == .file) {
+            const id = std.hash.Crc32.hash(elem.name);
+            try std.testing.expectEqual(try str_table.insert(alloc, id, try std.fmt.allocPrint(alloc, "{s}", .{elem.name})), true);
+        }
     }
 }
