@@ -1,6 +1,7 @@
 const std = @import("std");
 const kf = @import("known-folders");
 const Cache = @import("cache.zig");
+const StringTable = @import("string_table.zig");
 
 const Self = @This();
 
@@ -17,16 +18,24 @@ pub const ContainsReturnType = struct {
     pos: usize,
 };
 
+alloc: std.mem.Allocator = undefined,
 cache_arena: std.heap.ArenaAllocator = undefined,
-store: std.MultiArrayList(StoreType) = .{},
+store: std.MultiArrayList(StoreType) = .empty,
+str_store: StringTable = .{},
 current: ?*StoreType = undefined,
 
 pub fn init(allocator: std.mem.Allocator) Self {
-    return .{ .cache_arena = std.heap.ArenaAllocator.init(allocator) };
+    var ret: Self = .{
+        .cache_arena = std.heap.ArenaAllocator.init(allocator),
+    };
+    ret.alloc = ret.cache_arena.allocator();
+    return ret;
 }
 
 pub fn deinit(self: *Self) void {
-    self.store.deinit(self.cache_arena.allocator());
+    self.str_store.deinit(self.alloc);
+    self.store.deinit(self.alloc);
+    self.current = null;
     self.cache_arena.deinit();
 }
 
@@ -99,11 +108,14 @@ pub fn serialize(self: *Self) !void {
         try jw.endArray();
         try jw.endObject();
     }
+    try self.str_store.serialize();
 }
 
 pub fn deseraialize(self: *Self) !void {
     var buf = std.mem.zeroes([2048 * 1024]u8);
     var fba = std.heap.FixedBufferAllocator.init(&buf);
+
+    _ = try self.str_store.deserialize(self.alloc);
 
     const config_file = try configFileName(fba.allocator());
     if (config_file) |config_file_name| {
