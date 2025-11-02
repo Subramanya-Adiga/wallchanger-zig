@@ -45,8 +45,10 @@ pub fn serialize(self: *Self) !void {
 
             try std.fs.cwd().makePath(std.fs.path.dirname(config_file_name).?);
 
-            var config_check: bool = true;
-            var config_file: std.fs.File = undefined;
+    const file_name = try strTableFile(fba.allocator());
+    if (file_name) |config_file_name| {
+        var config_check: bool = true;
+        var config_file: std.fs.File = undefined;
 
             std.fs.cwd().access(config_file_name, .{}) catch |err| {
                 config_check = if (err == error.FileNotFound) false else true;
@@ -76,6 +78,8 @@ pub fn serialize(self: *Self) !void {
             try jw.endArray();
             try jw.endObject();
         }
+        try jw.endArray();
+        try jw.endObject();
     }
 }
 
@@ -83,14 +87,8 @@ pub fn deserialize(self: *Self, allocator: std.mem.Allocator) !bool {
     var buf = std.mem.zeroes([2048 * 1024]u8);
     var fba = std.heap.FixedBufferAllocator.init(&buf);
 
-    const dir = try kf.getPath(fba.allocator(), .local_configuration);
-    if (dir) |config_dir| {
-        const conc_name = try std.fs.path.join(fba.allocator(), &[_][]const u8{ config_dir, "wallchanger/data/str_table.json" });
-
-        const size = std.mem.replacementSize(u8, conc_name, "/", std.fs.path.sep_str);
-        const config_file_name = try fba.allocator().alloc(u8, size);
-        _ = std.mem.replace(u8, conc_name, "/", std.fs.path.sep_str, config_file_name);
-
+    const config_file = try strTableFile(fba.allocator());
+    if (config_file) |config_file_name| {
         var table_exists: bool = true;
 
         std.fs.accessAbsolute(config_file_name, .{}) catch |err| {
@@ -144,6 +142,22 @@ pub fn deserialize(self: *Self, allocator: std.mem.Allocator) !bool {
         return false;
     }
     return false;
+}
+
+fn strTableFile(allocator: std.mem.Allocator) !?[]const u8 {
+    const dir = try kf.getPath(allocator, .local_configuration);
+    if (dir) |config_dir| {
+        const conc_name = try std.fs.path.join(allocator, &[_][]const u8{ config_dir, "wallchanger/data/str_table.json" });
+
+        const size = std.mem.replacementSize(u8, conc_name, "/", std.fs.path.sep_str);
+        const config_file_name = try allocator.alloc(u8, size);
+        _ = std.mem.replace(u8, conc_name, "/", std.fs.path.sep_str, config_file_name);
+
+        try std.fs.cwd().makePath(std.fs.path.dirname(config_file_name).?);
+        allocator.free(dir.?);
+        return config_file_name;
+    }
+    return null;
 }
 
 test "String Table Insertion" {
