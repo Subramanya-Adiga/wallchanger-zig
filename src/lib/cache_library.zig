@@ -13,30 +13,51 @@ pub const StoreType = struct {
 
 pub const CacheType = enum(u8) { Directory, Individual, Mixed };
 
-pub const ContainsReturnType = struct {
-    exists: bool,
-    pos: usize,
-};
-
-alloc: std.mem.Allocator = undefined,
 cache_arena: std.heap.ArenaAllocator = undefined,
 store: std.MultiArrayList(StoreType) = .empty,
 str_store: StringTable = .{},
 current: ?*StoreType = undefined,
 
 pub fn init(allocator: std.mem.Allocator) Self {
-    var ret: Self = .{
-        .cache_arena = std.heap.ArenaAllocator.init(allocator),
-    };
-    ret.alloc = ret.cache_arena.allocator();
-    return ret;
+    return .{ .cache_arena = .init(allocator) };
 }
 
 pub fn deinit(self: *Self) void {
-    self.str_store.deinit(self.alloc);
-    self.store.deinit(self.alloc);
+    self.str_store.deinit(self.cache_arena.allocator());
+    self.store.deinit(self.cache_arena.allocator());
     self.current = null;
     self.cache_arena.deinit();
+}
+
+pub fn makeCache(self: *Self, name: []const u8, cache_type: CacheType) !bool {
+    const pos = self.getPos(name);
+    if (pos == null) {
+        try self.store.append(self.cache_arena.allocator(), .{
+            .name = name,
+            .cache = .init(self.cache_arena.allocator()),
+            .cache_type = cache_type,
+        });
+        return true;
+    }
+    return false;
+}
+
+pub fn getCache(self: *Self, name: []const u8) ?*Cache {
+    const pos = self.getPos(name);
+    if (pos) |loc| {
+        return &self.store.items(.cache)[loc];
+    }
+    return null;
+}
+
+fn getPos(self: *Self, name: []const u8) ?usize {
+    if (self.store.items(.name).len <= 0) return null;
+    for (self.store.items(.name), 0..self.store.len) |elem, i| {
+        if (std.mem.eql(u8, elem, name)) {
+            return i;
+        }
+    }
+    return null;
 }
 
 pub fn serialize(self: *Self) !void {
@@ -149,4 +170,23 @@ fn configFileName(allocator: std.mem.Allocator) !?[]const u8 {
         return conc_name;
     }
     return null;
+}
+
+test "CacheLibrary Test" {
+    var testing_arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer testing_arena.deinit();
+    const alloc = testing_arena.allocator();
+
+    var clib: Self = .init(alloc);
+    defer clib.deinit();
+
+    const val = try clib.makeCache("Wallpaper", .Directory);
+    const val2 = try clib.makeCache("Wallpaper", .Directory);
+    const val3 = try clib.makeCache("denise", .Directory);
+
+    try std.testing.expectEqual(val, true);
+    try std.testing.expectEqual(val2, false);
+    try std.testing.expectEqual(val3, true);
+
+    try std.testing.expectEqual(null, clib.getCache("help"));
 }
