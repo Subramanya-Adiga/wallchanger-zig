@@ -132,7 +132,7 @@ pub fn deserialize(self: *Self, allocator: std.mem.Allocator, io: IO, envMap: *s
         }
         return false;
     }
-    return false;
+    unreachable;
 }
 
 fn strTableFile(allocator: std.mem.Allocator, io: IO, envMap: *std.process.Environ.Map) !?[]const u8 {

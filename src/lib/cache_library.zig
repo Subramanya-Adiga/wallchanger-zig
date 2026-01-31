@@ -106,10 +106,12 @@ pub fn serialize(self: *Self, io: IO, envMap: *std.process.Environ.Map) !void {
 }
 
 pub fn deseraialize(self: *Self, io: IO, envMap: *std.process.Environ.Map) !void {
+    if (try self.str_store.deserialize(self.alloc, io, envMap)) {
+        return error.FailedDeserializeStringTable;
+    }
+
     var buf = std.mem.zeroes([2048 * 1024]u8);
     var fba = std.heap.FixedBufferAllocator.init(&buf);
-
-    _ = try self.str_store.deserialize(self.alloc, io, envMap);
 
     const config_file = try configFileName(fba.allocator(), io, envMap);
     if (config_file) |config_file_name| {
