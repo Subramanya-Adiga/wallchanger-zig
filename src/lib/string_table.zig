@@ -1,4 +1,5 @@
 const std = @import("std");
+const IO = std.Io;
 const kf = @import("known-folders");
 
 const Self = @This();
@@ -27,32 +28,37 @@ pub fn get(self: *Self, id: u32) ?[]const u8 {
     return null;
 }
 
-pub fn serialize(self: *Self) !void {
+pub fn serialize(self: *Self, io: IO, envMap: *std.process.Environ.Map) !void {
     var buf = std.mem.zeroes([256]u8);
     var fba = std.heap.FixedBufferAllocator.init(&buf);
 
-    const file_name = try strTableFile(fba.allocator());
+    const file_name = try strTableFile(fba.allocator(), io, envMap);
     if (file_name) |config_file_name| {
         var config_check: bool = true;
-        var config_file: std.fs.File = undefined;
+        var config_file: IO.File = undefined;
 
-        std.fs.cwd().access(config_file_name, .{}) catch |err| {
+        IO.Dir.cwd().access(io, config_file_name, .{}) catch |err| {
             config_check = if (err == error.FileNotFound) false else true;
         };
 
         if (config_check) {
-            config_file = try std.fs.openFileAbsolute(config_file_name, .{
+            config_file = try IO.Dir.openFileAbsolute(io, config_file_name, .{
                 .mode = .write_only,
             });
         } else {
-            config_file = try std.fs.createFileAbsolute(config_file_name, .{
+            config_file = try IO.Dir.createFileAbsolute(io, config_file_name, .{
                 .exclusive = true,
             });
         }
-        defer config_file.close();
+        defer IO.File.close(config_file, io);
 
-        var jw = std.json.writeStream(config_file.writer(), .{});
-        defer jw.deinit();
+        var config_writer_buf = std.mem.zeroes([1024]u8);
+        var config_file_writer = config_file.writer(io, &config_writer_buf);
+        const file_writer = &config_file_writer.interface;
+
+        var jw: std.json.Stringify = .{
+            .writer = file_writer,
+        };
         try jw.beginObject();
         try jw.objectField("size");
         try jw.write(self.table_store.len);
@@ -63,24 +69,26 @@ pub fn serialize(self: *Self) !void {
         }
         try jw.endArray();
         try jw.endObject();
+
+        try file_writer.flush();
     }
 }
 
-pub fn deserialize(self: *Self, allocator: std.mem.Allocator) !bool {
+pub fn deserialize(self: *Self, allocator: std.mem.Allocator, io: IO, envMap: *std.process.Environ.Map) !bool {
     var buf = std.mem.zeroes([2048 * 1024]u8);
     var fba = std.heap.FixedBufferAllocator.init(&buf);
 
-    const config_file = try strTableFile(fba.allocator());
+    const config_file = try strTableFile(fba.allocator(), io, envMap);
     if (config_file) |config_file_name| {
         var table_exists: bool = true;
 
-        std.fs.accessAbsolute(config_file_name, .{}) catch |err| {
+        IO.Dir.accessAbsolute(io, config_file_name, .{}) catch |err| {
             table_exists = if (err == error.FilenotFound) false else true;
         };
 
         if (table_exists) {
             fba.reset();
-            const config_buf = try std.fs.cwd().readFileAlloc(fba.allocator(), config_file_name, 2048 * 1024);
+            const config_buf = try IO.Dir.cwd().readFileAlloc(io, config_file_name, fba.allocator(), .limited64(2048 * 1024));
 
             var parse_arena = std.heap.ArenaAllocator.init(fba.allocator());
             defer parse_arena.deinit();
@@ -127,12 +135,12 @@ pub fn deserialize(self: *Self, allocator: std.mem.Allocator) !bool {
     return false;
 }
 
-fn strTableFile(allocator: std.mem.Allocator) !?[]const u8 {
-    const dir = try kf.getPath(allocator, .local_configuration);
+fn strTableFile(allocator: std.mem.Allocator, io: IO, envMap: *std.process.Environ.Map) !?[]const u8 {
+    const dir = try kf.getPath(io, allocator, envMap.*, .local_configuration);
     if (dir) |config_dir| {
         const conc_name = try std.fs.path.join(allocator, &[_][]const u8{ config_dir, "wallchanger/data/str_table.json" });
 
-        try std.fs.cwd().makePath(std.fs.path.dirname(conc_name).?);
+        try IO.Dir.cwd().createDirPath(io, std.fs.path.dirname(conc_name).?);
         allocator.free(dir.?);
         return conc_name;
     }
@@ -144,10 +152,13 @@ test "String Table Insertion" {
     var testing_arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer testing_arena.deinit();
     const alloc = testing_arena.allocator();
+    const io = std.testing.io;
+    var env = try std.testing.io_instance.environ.process_environ.createMap(alloc);
+    defer env.deinit();
 
     const path = switch (builtin.os.tag) {
         .windows => blk: {
-            const doc_path = try kf.getPath(alloc, .home);
+            const doc_path = try kf.getPath(io, alloc, env, .home);
             const doc_conc = try std.fs.path.join(alloc, &[_][]const u8{ doc_path.?, "\\Documents\\wall" });
             var dir_check: bool = true;
             std.fs.cwd().access(doc_conc, .{}) catch |err| {
@@ -155,22 +166,22 @@ test "String Table Insertion" {
             };
             break :blk if (dir_check) doc_conc else "D:/Wallpaper";
         },
-        .linux => blk: {
-            const wall_path = try kf.getPath(alloc, .home);
+        .linux, .freebsd => blk: {
+            const wall_path = try kf.getPath(io, alloc, env, .home);
             const wall_conc = try std.fs.path.join(alloc, &[_][]const u8{ wall_path.?, "newMass/Wallpaper" });
             break :blk wall_conc;
         },
         else => std.debug.assert(false),
     };
 
-    var dir = try std.fs.cwd().openDir(path, .{ .iterate = true });
-    defer dir.close();
+    var dir = try IO.Dir.cwd().openDir(io, path, .{ .iterate = true });
+    defer IO.Dir.close(dir, io);
     var walk = dir.iterate();
 
     var str_table: Self = .{};
     defer str_table.deinit(alloc);
 
-    while (try walk.next()) |elem| {
+    while (try walk.next(io)) |elem| {
         if (elem.kind == .file) {
             const id = std.hash.Crc32.hash(elem.name);
             try std.testing.expectEqual(try str_table.insert(alloc, id, try std.fmt.allocPrint(alloc, "{s}", .{elem.name})), true);
@@ -183,10 +194,13 @@ test "String Table Serialize And Deserialze" {
     var testing_arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer testing_arena.deinit();
     const alloc = testing_arena.allocator();
+    const io = std.testing.io;
+    var env = try std.testing.io_instance.environ.process_environ.createMap(alloc);
+    defer env.deinit();
 
     const path = switch (builtin.os.tag) {
         .windows => blk: {
-            const doc_path = try kf.getPath(alloc, .home);
+            const doc_path = try kf.getPath(io, alloc, env, .home);
             const doc_conc = try std.fs.path.join(alloc, &[_][]const u8{ doc_path.?, "\\Documents\\wall" });
             var dir_check: bool = true;
             std.fs.cwd().access(doc_conc, .{}) catch |err| {
@@ -195,33 +209,33 @@ test "String Table Serialize And Deserialze" {
             break :blk if (dir_check) doc_conc else "D:/Wallpaper";
         },
         .linux => blk: {
-            const wall_path = try kf.getPath(alloc, .home);
+            const wall_path = try kf.getPath(io, alloc, env, .home);
             const wall_conc = try std.fs.path.join(alloc, &[_][]const u8{ wall_path.?, "newMass/Wallpaper" });
             break :blk wall_conc;
         },
         else => std.debug.assert(false),
     };
 
-    var dir = try std.fs.cwd().openDir(path, .{ .iterate = true });
-    defer dir.close();
+    var dir = try IO.Dir.cwd().openDir(io, path, .{ .iterate = true });
+    defer IO.Dir.close(dir, io);
     var walk = dir.iterate();
 
     var str_table: Self = .{};
     defer str_table.deinit(alloc);
 
-    while (try walk.next()) |elem| {
+    while (try walk.next(io)) |elem| {
         if (elem.kind == .file) {
             const id = std.hash.Crc32.hash(elem.name);
-            _ = try str_table.insert(alloc, id, elem.name);
+            _ = try str_table.insert(alloc, id, try std.fmt.allocPrint(alloc, "{s}", .{elem.name}));
         }
     }
 
-    try str_table.serialize();
+    try str_table.serialize(io, &env);
 
     var str_table2: Self = .{};
     defer str_table2.deinit(alloc);
 
-    try std.testing.expectEqual(try str_table2.deserialize(alloc), true);
+    try std.testing.expectEqual(try str_table2.deserialize(alloc, io, &env), true);
 
     try std.testing.expectEqualDeep(str_table.table_store.items(.id), str_table2.table_store.items(.id));
     try std.testing.expectEqualDeep(str_table.table_store.items(.str), str_table2.table_store.items(.str));

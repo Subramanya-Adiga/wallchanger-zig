@@ -1,30 +1,8 @@
 const std = @import("std");
-const patht = @import("changer").StrTable;
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-
-    var arena = std.heap.ArenaAllocator.init(gpa.allocator());
-    defer arena.deinit();
-
-    var path: patht = .{};
-    defer path.deinit(arena.allocator());
-
-    var dir = try std.fs.cwd().openDir("C:/Users/subbu/Documents/wall/", .{ .iterate = true });
-    defer dir.close();
-
-    var walk = try dir.walk(arena.allocator());
-    defer walk.deinit();
-
-    while (try walk.next()) |elem| {
-        _ = try path.insert(arena.allocator(), try std.fmt.allocPrint(arena.allocator(), "{s}", .{elem.path}));
-    }
-    try path.serialize();
-
-    for (path.table_store.items(.id), path.table_store.items(.str)) |i, s| {
-        std.debug.print("{} {s}\n", .{ i, s });
-    }
+pub fn main(init: std.process.Init) !void {
+    _ = init;
+    std.debug.print("Hello World!\n", .{});
 }
 
 test "CacheValueSetting" {

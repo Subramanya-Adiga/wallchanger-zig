@@ -1,14 +1,14 @@
 .{
     .name = .wallchanger,
     .version = "0.0.0",
-    .fingerprint = 0x75e30943f145ee91, // Changing this has security and trust implications.
-    .minimum_zig_version = "0.14.0",
     .dependencies = .{
         .known_folders = .{
-            .url = "git+https://github.com/ziglibs/known-folders.git#aa24df42183ad415d10bc0a33e6238c437fc0f59",
-            .hash = "known_folders-0.0.0-Fy-PJtLDAADGDOwYwMkVydMSTp_aN-nfjCZw6qPQ2ECL",
+            .url = "git+https://github.com/ziglibs/known-folders.git#82027007c0eb199a3242c167a5cffd83b6ee571b",
+            .hash = "known_folders-0.0.0-Fy-PJqHJAAB43zDJmOdlr3nViu69IFI9pNFt7hkHjKk4",
         },
     },
+    .fingerprint = 0x75e30943f145ee91, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.15.0",
     .paths = .{
         "build.zig",
         "build.zig.zon",

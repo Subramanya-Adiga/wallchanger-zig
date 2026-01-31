@@ -2,6 +2,7 @@ const std = @import("std");
 const kf = @import("known-folders");
 const Cache = @import("cache.zig");
 const StringTable = @import("string_table.zig");
+const IO = std.Io;
 
 const Self = @This();
 
@@ -60,32 +61,35 @@ fn getPos(self: *Self, name: []const u8) ?usize {
     return null;
 }
 
-pub fn serialize(self: *Self) !void {
+pub fn serialize(self: *Self, io: IO, envMap: *std.process.Environ.Map) !void {
     var buf = std.mem.zeroes([256]u8);
     var fba = std.heap.FixedBufferAllocator.init(&buf);
 
-    const config_file = try configFileName(fba.allocator());
+    const config_file = try configFileName(fba.allocator(), io, envMap);
     if (config_file) |config_file_name| {
         var cache_check: bool = true;
-        var cache_file: std.fs.File = undefined;
+        var cache_file: IO.File = undefined;
 
-        std.fs.cwd().access(config_file_name, .{}) catch |err| {
+        IO.Dir.cwd().access(io, config_file_name, .{}) catch |err| {
             cache_check = if (err == error.FileNotFound) false else true;
         };
 
         if (cache_check) {
-            cache_file = try std.fs.openFileAbsolute(config_file_name, .{
+            cache_file = try IO.Dir.openFileAbsolute(io, config_file_name, .{
                 .mode = .write_only,
             });
         } else {
-            cache_file = try std.fs.createFileAbsolute(config_file_name, .{
+            cache_file = try IO.Dir.createFileAbsolute(io, config_file_name, .{
                 .exclusive = true,
             });
         }
-        defer cache_file.close();
+        defer IO.File.close(cache_file, io);
 
-        var jw = std.json.writeStream(cache_file.writer(), .{});
-        defer jw.deinit();
+        var cache_buf = std.mem.zeroes([1024]u8);
+        var cache_writer = cache_file.writer(io, &cache_buf);
+        const cache_json_writer = &cache_writer.interface;
+
+        var jw: std.json.Stringify = .{ .writer = cache_json_writer };
         try jw.beginObject();
         try jw.objectField("size");
         try jw.write(self.store.len);
@@ -96,27 +100,28 @@ pub fn serialize(self: *Self) !void {
         }
         try jw.endArray();
         try jw.endObject();
+        try cache_writer.flush();
     }
-    try self.str_store.serialize();
+    try self.str_store.serialize(io, envMap);
 }
 
-pub fn deseraialize(self: *Self) !void {
+pub fn deseraialize(self: *Self, io: IO, envMap: *std.process.Environ.Map) !void {
     var buf = std.mem.zeroes([2048 * 1024]u8);
     var fba = std.heap.FixedBufferAllocator.init(&buf);
 
-    _ = try self.str_store.deserialize(self.alloc);
+    _ = try self.str_store.deserialize(self.alloc, io, envMap);
 
-    const config_file = try configFileName(fba.allocator());
+    const config_file = try configFileName(fba.allocator(), io, envMap);
     if (config_file) |config_file_name| {
         var cache_exists: bool = true;
 
-        std.fs.accessAbsolute(config_file_name, .{}) catch |err| {
+        IO.Dir.accessAbsolute(config_file_name, .{}) catch |err| {
             cache_exists = if (err == error.FilenotFound) false else true;
         };
 
         if (cache_exists) {
             fba.reset();
-            const config_buf = try std.fs.cwd().readFileAlloc(fba.allocator(), config_file_name, 2048 * 1024);
+            const config_buf = try IO.Dir.cwd().readFileAlloc(io, fba.allocator(), config_file_name, .limited64(2048 * 1024));
             //Construct JSON Object Scanner
             var parse_arena = std.heap.ArenaAllocator.init(fba.allocator());
             defer parse_arena.deinit();
@@ -159,12 +164,12 @@ pub fn deseraialize(self: *Self) !void {
     }
 }
 
-fn configFileName(allocator: std.mem.Allocator) !?[]const u8 {
-    const dir = try kf.getPath(allocator, .local_configuration);
+fn configFileName(allocator: std.mem.Allocator, io: IO, envMap: *std.process.Environ.Map) !?[]const u8 {
+    const dir = try kf.getPath(io, allocator, envMap.*, .local_configuration);
     if (dir) |config_dir| {
         const conc_name = try std.fs.path.join(allocator, &[_][]const u8{ config_dir, "wallchanger/data/cache.json" });
 
-        try std.fs.cwd().makePath(std.fs.path.dirname(conc_name).?);
+        try IO.Dir.cwd().createDirPath(io, std.fs.path.dirname(conc_name).?);
         allocator.free(dir.?);
 
         return conc_name;

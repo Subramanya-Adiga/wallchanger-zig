@@ -4,7 +4,11 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const wall_mod = b.addModule("changer", .{ .root_source_file = b.path("src/lib/root.zig") });
+    const wall_mod = b.addModule("changer", .{
+        .root_source_file = b.path("src/lib/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
 
     const known_folders = b.dependency("known_folders", .{}).module("known-folders");
 
@@ -34,9 +38,7 @@ pub fn build(b: *std.Build) void {
     run_step.dependOn(&run_cmd.step);
 
     const lib_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/lib/root.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = wall_mod,
     });
     lib_unit_tests.root_module.addImport("known-folders", known_folders);
 

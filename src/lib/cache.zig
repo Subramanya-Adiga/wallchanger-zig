@@ -9,19 +9,22 @@ pub const CacheState = enum(u2) {
     Favorate,
 };
 
-store: std.ArrayList(u64) = undefined,
+store: std.ArrayList(u64) = .empty,
+alloc: std.mem.Allocator = undefined,
 
 pub fn init(allocator: std.mem.Allocator) Self {
-    return .{ .store = std.ArrayList(u64).init(allocator) };
+    return .{
+        .alloc = allocator,
+    };
 }
 
 pub fn deinit(self: *Self) void {
-    self.store.deinit();
+    self.store.deinit(self.alloc);
 }
 
 pub fn insert(self: *Self, value: u64) !bool {
     if (!self.exists(value)) {
-        try self.store.append(value);
+        try self.store.append(self.alloc, value);
         return true;
     }
     return error.CacheValueExists;
@@ -60,21 +63,20 @@ pub fn setState(self: *Self, index: usize, state: CacheState) !bool {
     return error.IndexDoesNotExists;
 }
 
-// Needs To Be Enabled When Upgraded To Zig Version 0.15.1 Or Higher
-// pub fn removeNull(self: *Self) !void {
-//     var buf = std.mem.zeroes([2048 * 128]u8);
-//     var fba = std.heap.FixedBufferAllocator(&buf);
-//
-//     var indecies = std.ArrayList(usize).init(fba.allocator());
-//     defer indecies.deinit();
-//
-//     for (self.store.items, 0..self.store.items.len) |val, pos| {
-//         if (@as(u2, @truncate(val)) == @intFromEnum(CacheState.Null)) {
-//             try indecies.append(pos);
-//         }
-//     }
-//     self.store.orderedRemoveMany(indecies.items);
-// }
+pub fn removeNull(self: *Self) !void {
+    var buf = std.mem.zeroes([2048 * 128]u8);
+    var fba = std.heap.FixedBufferAllocator(&buf);
+
+    var indecies = std.ArrayList(usize).init(fba.allocator());
+    defer indecies.deinit();
+
+    for (self.store.items, 0..self.store.items.len) |val, pos| {
+        if (@as(u2, @truncate(val)) == @intFromEnum(CacheState.Null)) {
+            try indecies.append(pos);
+        }
+    }
+    self.store.orderedRemoveMany(indecies.items);
+}
 
 pub fn jsonStringify(self: *const Self, jw: anytype) !void {
     try jw.beginObject();
@@ -93,7 +95,9 @@ pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.jso
     var buf = std.mem.zeroes([2048]u8);
     var fba = std.heap.FixedBufferAllocator.init(&buf);
 
-    var ret: Self = .{ .store = std.ArrayList(u64).init(allocator) };
+    var ret: Self = .{
+        .alloc = allocator,
+    };
 
     const size_field = try std.json.innerParse([]const u8, fba.allocator(), source, options);
     if (std.mem.eql(u8, size_field, "size") == false) {
@@ -101,14 +105,14 @@ pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.jso
     }
 
     const size = try std.json.innerParse(usize, fba.allocator(), source, options);
-    try ret.store.ensureTotalCapacity(size);
+    try ret.store.ensureTotalCapacity(ret.alloc, size);
 
     const value_field = try std.json.innerParse([]const u8, fba.allocator(), source, options);
     if (std.mem.eql(u8, value_field, "store") == false) {
         return error.UnknownField;
     }
 
-    try ret.store.appendSlice(try std.json.innerParse([]u64, allocator, source, options));
+    try ret.store.appendSlice(ret.alloc, try std.json.innerParse([]u64, allocator, source, options));
 
     if (try source.next() != .object_end) {
         return error.UnexpectedToken;
@@ -134,16 +138,16 @@ test "Cache Stringify And Parse" {
     _ = try cache.insert(66);
     _ = try cache.insert(77);
 
-    var cachestr = std.ArrayList(u8).init(alloc);
-    defer cachestr.deinit();
+    var cachestr: std.ArrayList(u8) = .empty;
+    defer cachestr.deinit(alloc);
 
-    try std.json.stringify(cache, .{}, cachestr.writer());
+    try cachestr.print(alloc, "{f}", .{std.json.fmt(cache, .{})});
 
     var cache2 = Self.init(alloc);
     defer cache2.deinit();
 
     const parsed = try std.json.parseFromSlice(Self, alloc, cachestr.items, .{});
-    try cache2.store.appendSlice(parsed.value.store.items);
+    try cache2.store.appendSlice(cache2.alloc, parsed.value.store.items);
     parsed.deinit();
 
     try std.testing.expectEqual(cache.store.items.len, cache2.store.items.len);
