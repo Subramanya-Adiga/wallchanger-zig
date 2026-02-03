@@ -161,7 +161,7 @@ test "String Table Insertion" {
             const doc_path = try kf.getPath(io, alloc, env, .home);
             const doc_conc = try std.fs.path.join(alloc, &[_][]const u8{ doc_path.?, "\\Documents\\wall" });
             var dir_check: bool = true;
-            std.fs.cwd().access(doc_conc, .{}) catch |err| {
+            IO.Dir.cwd().access(io, doc_conc, .{}) catch |err| {
                 dir_check = if (err == error.FileNotFound) false else true;
             };
             break :blk if (dir_check) doc_conc else "D:/Wallpaper";
@@ -203,7 +203,7 @@ test "String Table Serialize And Deserialze" {
             const doc_path = try kf.getPath(io, alloc, env, .home);
             const doc_conc = try std.fs.path.join(alloc, &[_][]const u8{ doc_path.?, "\\Documents\\wall" });
             var dir_check: bool = true;
-            std.fs.cwd().access(doc_conc, .{}) catch |err| {
+            IO.Dir.cwd().access(io, doc_conc, .{}) catch |err| {
                 dir_check = if (err == error.FileNotFound) false else true;
             };
             break :blk if (dir_check) doc_conc else "D:/Wallpaper";

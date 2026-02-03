@@ -17,7 +17,7 @@ pub const CacheType = enum(u8) { Directory, Individual, Mixed };
 cache_arena: std.heap.ArenaAllocator = undefined,
 store: std.MultiArrayList(StoreType) = .empty,
 str_store: StringTable = .{},
-current: ?*StoreType = undefined,
+current: ?StoreType = null,
 
 pub fn init(allocator: std.mem.Allocator) Self {
     return .{ .cache_arena = .init(allocator) };
@@ -61,6 +61,15 @@ fn getPos(self: *Self, name: []const u8) ?usize {
     return null;
 }
 
+fn setActive(self: *Self, name: []const u8) !void {
+    const pos = self.getPos(name);
+    if (pos) |loc| {
+        self.current = self.store.get(loc);
+        return;
+    }
+    return error.CacheStoreDoesNotExists;
+}
+
 pub fn serialize(self: *Self, io: IO, envMap: *std.process.Environ.Map) !void {
     var buf = std.mem.zeroes([256]u8);
     var fba = std.heap.FixedBufferAllocator.init(&buf);
@@ -93,6 +102,10 @@ pub fn serialize(self: *Self, io: IO, envMap: *std.process.Environ.Map) !void {
         try jw.beginObject();
         try jw.objectField("size");
         try jw.write(self.store.len);
+        if (self.current) |act| {
+            try jw.objectField("active");
+            try jw.write(act.name);
+        }
         try jw.objectField("store");
         try jw.beginArray();
         for (self.store.items(.cache_type), self.store.items(.name), self.store.items(.cache)) |ctype, name, cache| {
@@ -142,7 +155,13 @@ pub fn deseraialize(self: *Self, io: IO, envMap: *std.process.Environ.Map) !void
 
             const content_size = try std.json.innerParse(usize, parse_allocator, &source, options);
 
-            const store_field = try std.json.innerParse([]const u8, parse_allocator, &source, options);
+            var active_name: ?[]const u8 = null;
+            const active_field = try std.json.innerParse([]const u8, parse_allocator, &source, options);
+            if (std.mem.eql(u8, "active", active_field)) {
+                active_name = try std.json.innerParse([]const u8, parse_allocator, &source, options);
+            }
+
+            const store_field = if (active_name == null) active_field else try std.json.innerParse([]const u8, parse_allocator, &source, options);
             if (std.mem.eql(u8, "store", store_field) == false) {
                 return error.UnexpectedField;
             }
@@ -162,6 +181,10 @@ pub fn deseraialize(self: *Self, io: IO, envMap: *std.process.Environ.Map) !void
             std.debug.assert(.object_end == try source.next());
 
             std.debug.assert(.end_of_document == try source.next());
+
+            if (active_name) |name| {
+                try self.setActive(name);
+            }
         }
     }
 }
