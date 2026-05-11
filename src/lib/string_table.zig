@@ -136,9 +136,9 @@ pub fn deserialize(self: *Self, allocator: std.mem.Allocator, io: IO, envMap: *s
 }
 
 fn strTableFile(allocator: std.mem.Allocator, io: IO, envMap: *std.process.Environ.Map) !?[]const u8 {
-    const dir = try kf.getPath(io, allocator, envMap.*, .local_configuration);
+    const dir = try kf.getPath(io, allocator, envMap.*, .data);
     if (dir) |config_dir| {
-        const conc_name = try std.fs.path.join(allocator, &[_][]const u8{ config_dir, "wallchanger/data/str_table.json" });
+        const conc_name = try std.fs.path.join(allocator, &[_][]const u8{ config_dir, "wallchanger/str_table.json" });
 
         try IO.Dir.cwd().createDirPath(io, std.fs.path.dirname(conc_name).?);
         allocator.free(dir.?);

@@ -190,9 +190,9 @@ pub fn deseraialize(self: *Self, io: IO, envMap: *std.process.Environ.Map) !void
 }
 
 fn configFileName(allocator: std.mem.Allocator, io: IO, envMap: *std.process.Environ.Map) !?[]const u8 {
-    const dir = try kf.getPath(io, allocator, envMap.*, .local_configuration);
+    const dir = try kf.getPath(io, allocator, envMap.*, .data);
     if (dir) |config_dir| {
-        const conc_name = try std.fs.path.join(allocator, &[_][]const u8{ config_dir, "wallchanger/data/cache.json" });
+        const conc_name = try std.fs.path.join(allocator, &[_][]const u8{ config_dir, "wallchanger/libraries.json" });
 
         try IO.Dir.cwd().createDirPath(io, std.fs.path.dirname(conc_name).?);
         allocator.free(dir.?);
@@ -206,6 +206,10 @@ test "CacheLibrary Test" {
     var testing_arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer testing_arena.deinit();
     const alloc = testing_arena.allocator();
+    const io = std.testing.io;
+
+    var envMap = try std.testing.io_instance.environ.process_environ.createMap(alloc);
+    defer envMap.deinit();
 
     var clib: Self = .init(alloc);
     defer clib.deinit();
@@ -217,6 +221,14 @@ test "CacheLibrary Test" {
     try std.testing.expectEqual(val, true);
     try std.testing.expectEqual(val2, false);
     try std.testing.expectEqual(val3, true);
+
+    const str = "denise";
+
+    try clib.setActive(str);
+
+    try std.testing.expectEqualStrings(clib.current.?.name, str);
+
+    try clib.serialize(io, &envMap);
 
     try std.testing.expectEqual(null, clib.getCache("help"));
 }
